@@ -1,0 +1,273 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+
+local library = {}
+if RunService:IsStudio() then
+	library, library_flags, library.subs = table.unpack(require(script.PepsiLib))
+else
+	library = loadstring(game:GetObjects("rbxassetid://7657867786")[1].Source)()
+end
+
+local ClientIsDragging = ReplicatedStorage.Interaction.ClientIsDragging
+local ClientInteracted = ReplicatedStorage.Interaction.ClientInteracted
+local RemoteProxy = ReplicatedStorage.Interaction.RemoteProxy
+local PlayerChatted = ReplicatedStorage.NPCDialog.PlayerChatted
+local PromptChatRemote = ReplicatedStorage.NPCDialog.PromptChat
+local SetChattingValue = ReplicatedStorage.NPCDialog.SetChattingValue
+
+local LocalPlayer = Players.LocalPlayer
+
+local Character: Model = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+
+local NPClookup = { }
+
+local TeeLookup = { "Generic", "Oak", "Cherry", "Fir", "Birch", "Walnut", "Koa", "Volcano", "GreenSwampy", "GoldSwampy", "Palm", "SnowGlow", "Frost", "BlueSpruce", "LoneCave", "Spooky", "SpookyNeon", "CaveCrawler" }
+local AxeLookup = { "BasicHatchet", "PlainAxe", "SteelAxe", "HardenedAxe", "SilverAxe", "Rukiryaxe", "EndTimesAxe", "BluesteelAxe", "AlphaAxeofTesting", "BetaAxeofBosses", "FireAxe", "AmberAxe", "CandyCaneAxe", "Beesaxe", "CHICKENAXE", "TheManyAxe", "BirdAxe", "GingerbreadAxe", "RustyAxe", "CandyCornAxe", "CaveAxe", "OvergrownAxe", "FrostAxe", "PieAxe", "SpearmintAxe", "RefinedAxe" }
+
+local TreeColorLookup = {
+	Generic = { Color = Color3.fromRGB(204, 142, 105), Material = Enum.Material.Wood },
+	Oak = { Color = Color3.fromRGB(234, 184, 146), Material = Enum.Material.Wood },
+	Cherry = { BestAxe = "PieAxe", Color = Color3.fromRGB(163, 75, 75), Material = Enum.Material.Wood },
+	Fir = { Color = Color3.fromRGB(215, 197, 154), Material = Enum.Material.Wood },
+	Birch = { Color = Color3.fromRGB(205, 205, 205), Material = Enum.Material.Wood },
+	Walnut = { BestAxe = "GingerbreadAxe", Color = Color3.fromRGB(105, 64, 40), Material = Enum.Material.Wood },
+	Koa = { BestAxe = "GingerbreadAxe", Color = Color3.fromRGB(143, 76, 42), Material = Enum.Material.Wood },
+	Volcano = { BestAxe = "BirdAxe", Color = Color3.fromRGB(255, 0, 0), Material = Enum.Material.Wood },
+	GreenSwampy = { BestAxe = "OvergrownAxe", Color = Color3.fromRGB(52, 142, 64), Material = Enum.Material.Wood },
+	GoldSwampy = { BestAxe = "OvergrownAxe", Color = Color3.fromRGB(226, 155, 64), Material = Enum.Material.Wood },
+	Palm = { Color = Color3.fromRGB(226, 220, 188), Material = Enum.Material.Wood },
+	SnowGlow = { Color = Color3.fromRGB(255, 255, 0), Material = Enum.Material.Wood },
+	Frost = { BestAxe = "FrostAxe", Color = Color3.fromRGB(159, 243, 233), Material = Enum.Material.Wood },
+	BlueSpruce = { BestAxe = "BluesteelAxe", Color = Color3.fromRGB(159, 173, 192), Material = Enum.Material.Wood },
+	LoneCave = { OnlyAxe = "EndTimesAxe", Color = Color3.fromRGB(248, 248, 248), Material = Enum.Material.Wood },
+	Spooky = { Color = Color3.fromRGB(170, 85, 0), Material = Enum.Material.Granite },
+	SpookyNeon = { Color = Color3.fromRGB(170, 85, 0), Material = Enum.Material.Neon },
+	CaveCrawler = { BestAxe = "CaveAxe", Color = Color3.fromRGB(16, 42, 220), Material = Enum.Material.Neon },
+}
+
+local DraggableItemTypes = {"Loose Item", "Tool"}
+local ModelLookup = {
+	["Preserved Enlarged Ostrich Eye"] = "Eye1",
+	Preserved_Enlarged_Ostrich_Eye = "Eye1",
+	PreservedEnlargedOstrichEye = "Eye1",
+	OstrichEye = "Eye1",
+	Eye1 = "Eye1",
+}
+
+local dragCoroutine = nil
+
+local function Drag( Item: Model )	
+	if not Item then return end
+
+	local ItemType: StringValue = Item:FindFirstChild("Type")
+
+	if not ItemType or ItemType.Value ~= "Loose Item" then return end
+
+	if Item and not dragCoroutine then
+		dragCoroutine = task.spawn(function()
+			while task.wait() do
+				ClientIsDragging:FireServer(Item)
+			end
+		end)
+	elseif dragCoroutine or not Item then
+		task.cancel(dragCoroutine)
+		dragCoroutine = nil
+	end
+end
+
+
+local function MoveItem( Item: Model, ToPose: Vector3 )
+	if not Item:IsA("Model") or not Item.PrimaryPart then return end
+	local ItemType: StringValue = Item:FindFirstChild("Type")
+
+	if not ItemType or not table.find(DraggableItemTypes, ItemType.Value) then return end
+
+	Character:PivotTo(Item:GetPivot() * CFrame.new(0,2,5))
+	Drag(Item)
+	task.wait(1)
+
+	Character:PivotTo(CFrame.new(ToPose + Vector3.yAxis*2))
+	Item:PivotTo(CFrame.new(ToPose))
+	Drag(nil)
+
+	return true
+end
+
+local function GetAxes(): { string }
+	local axeTools = {}
+	
+	for _,Tool: Tool in ipairs(LocalPlayer.Backpack:GetChildren()) do
+		if Tool:IsA("Tool") and Tool:FindFirstChild("CuttingTool") and Tool:FindFirstChild("ToolName") then
+			table.insert(axeTools, Tool.ToolName.Value)
+		end
+	end
+	
+	for _,Tool in ipairs(Character:GetChildren()) do
+		if Tool:IsA("Tool") and Tool:FindFirstChild("CuttingTool") then
+			if Tool:IsA("Tool") and Tool:FindFirstChild("CuttingTool") and Tool:FindFirstChild("ToolName") then
+				table.insert(axeTools, Tool.ToolName.Value)
+			end
+		end
+	end
+	
+	return axeTools
+end
+
+local function GetAxe( Name: string )
+
+end
+
+local function ChopTree( TreeModel: Model )
+	local CutEvent = TreeModel:FindFirstChild("CutEvent")
+
+	if not CutEvent then return end
+	
+	if not CutEvent then return end
+
+	RemoteProxy:FireServer(CutEvent, {
+		height = 0.4,
+		faceVector = nil,
+		cooldown = 0.4,
+		sectionId = 1,
+		hitPoints = 1.68,
+		tool = game:GetService("Players").LocalPlayer.Backpack.Tool,
+		cuttingClass = "Axe"
+	})
+end
+
+local function GetTree( Name: string ): Model?
+	for _, TreeRegion: Model in workspace:GetChildren() do
+		if TreeRegion:IsA("Model") and TreeRegion.Name == "TreeRegion" then
+			for _, TreeModel: Model in TreeRegion:GetChildren() do
+				local TreeClass = TreeModel:FindFirstChild("TreeClass")
+
+				if TreeModel:IsA("Model") and TreeClass:IsA("StringValue") and TreeClass.Value == Name then
+					local Owner = TreeModel:FindFirstChild("Owner")
+
+					if Owner:IsA("ObjectValue") and not Owner.Value then
+						return TreeModel
+					end
+				end
+			end
+		end
+	end
+
+
+	return nil
+end
+
+local function GetItem( Name: string, Owner: Player, IsBoxed: boolean ): Instance?
+	for _,Item: Model in ipairs(workspace.PlayerModels:GetChildren()) do
+		if not Item:IsA("Model") or not Item.PrimaryPart then continue end
+
+		local Boxed: StringValue = Item:FindFirstChild("PurchasedBoxItemName")
+		local ItemName: StringValue = Item:FindFirstChild("ItemName")
+		local Owner: ObjectValue = Item:FindFirstChild("Owner")
+		print(not Owner or (not ItemName and not Boxed))
+		if not Owner or (not ItemName and not Boxed) then continue end
+
+		if Owner.Value == Owner and (IsBoxed and Boxed and Boxed.Value == ModelLookup[Name]) or (ItemName and ItemName.Value == ModelLookup[Name]) then
+			return Item
+		end
+	end
+
+	return nil
+end
+
+local function LoadBuild( SaveTo: Player, Structure: string )
+	game:GetService("ReplicatedStorage").PlaceStructure.ClientPlacedBlueprint:FireServer(
+		"Floor1Large",
+		CFrame.new(90, 0.200000018, -251, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+		game:GetService("Players").LocalPlayer
+	)
+end
+
+local function PromptChat(NextTo, Data)
+	NPClookup[Data.Name] = Data
+end
+
+local PepsisWorld = library:CreateWindow({
+	Name = "Pepsi's World",
+	Themeable = {
+		Info = "Discord Server: VzYTJ7Y"
+	}
+})
+
+local GeneralTab = PepsisWorld:CreateTab({
+	Name = "General"
+})
+local TreeSection = GeneralTab:CreateSection({
+	Name = "Trees"
+})
+
+local SelectedTree = "Generic"
+
+TreeSection:AddDropdown({
+	Name = "Tree",
+	List = TeeLookup,
+	Callback = function( _, NewValue )
+		SelectedTree = NewValue
+	end,
+})
+TreeSection:AddButton({
+	Name = "Get",
+	Callback = function()
+		local axes = GetAxes()
+		
+		if not SelectedTree and #axes <= 0 then return end
+
+		local Tree: Model = GetTree(SelectedTree)
+
+		if not Tree then return end
+		
+		while task.wait() do -- chop the tree down
+			Character:PivotTo(Tree:GetPivot())
+			
+			if TreeColorLookup[Tree].BestAxe then
+				
+			elseif TreeColorLookup[Tree].OnlyAxe and table.find(axes, "EndTimesAxe") then
+				
+			end
+		end
+	end
+})
+
+local BdridgeSection = GeneralTab:CreateSection({
+	Name = "Bdridge"
+})
+
+BdridgeSection:AddButton({
+	Name = "LowerBridge (Phantom Wood)",
+	Callback = function()
+		local Eye;
+
+		if GetItem("Eye1", LocalPlayer, false) then
+			Eye = GetItem("Eye1", LocalPlayer, false)
+		elseif GetItem("Eye1", LocalPlayer, true) then
+			ClientInteracted:FireServer(GetItem("Eye1", LocalPlayer, true), "Open box")
+
+			repeat
+				task.wait()
+				Eye = GetItem("Eye1", LocalPlayer, false)
+			until (Eye ~= nil)
+		end
+
+		if Eye then
+			MoveItem(Eye, Vector3.new(134.759, 5.205, -608.2))
+		end
+
+		Character:PivotTo(CFrame.new(Vector3.new(136.494, 15.137, -608.2)))
+
+		PlayerChatted:InvokeServer(NPClookup["Seranok"],"ConfirmPurchase")
+	end
+})
+BdridgeSection:AddButton({
+	Name = "LowerBridge",
+	Callback = function()
+		PlayerChatted:InvokeServer(NPClookup["Seranok"], "ConfirmPurchase")
+	end
+})
+
+
+PromptChatRemote.OnClientEvent:connect(PromptChat)
